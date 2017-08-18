@@ -9,7 +9,7 @@ with open( path.join(path.abspath(path.dirname(__file__)) , 'README.md' )) as f:
 
 setup(
     name = 'restam',
-    version = '0.0.04',
+    version = '0.0.10',
     packages = ["restam"],
     scripts=['restam/__main__.py'],
     #entry_points = {

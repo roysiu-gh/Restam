@@ -4,7 +4,7 @@ import sys
 
 # get func name: sys._getframe().f_code.co_name
 
-## Create type signatures
+# Create type signatures
 meal_config_typing = Dict[ str, Any ]
 meals_config_typing = Dict[ str, meal_config_typing ]
 
@@ -33,7 +33,7 @@ class Restaurant( object ):
                 exec( f.read() )
         
         try:
-            ## Main configs
+            # Main configs
             assert type(self.timing_interval_mins) is int , "self.timing_interval_mins is not int"
             
             assert type(self.restaurant_name) is str , "self.restaurant_name is not str"
@@ -80,29 +80,28 @@ class Restaurant( object ):
             self.transactions = {}
             self.next_transaction_no = 0
             
-            ## Timetable generation
+            # Timetable generation
+            #self.times = []
+            #for hour in range(self.opening_time[0], self.closing_time[0]):
+            #    for minute in range(0, 61, self.timing_interval_mins):
+            #        time = (hour * 100) + minute
+            #        self.times.append( time )
+            
+            # Timetable generation
             self.timetable = {}
-            open_hour, open_min = divmod( self.opening_time, 100 )
-            close_hour, close_min = divmod( self.closing_time, 100 )
+            open_hour, open_min = divmod(self.opening_time)
+            close_hour, close_min = divmod(self.closing_time)
             total_open_time_mins = ( close_hour - open_hour ) * 60  +  ( close_min - open_min )
             for moment in range( 0, total_open_time_mins, self.timing_interval_mins ):
-                self.timetable[ str(moment).zfill( len(str(total_open_time_mins)) ) ] = None
+                self.timetable[ str(moment) ] = None
+                print(moment)
+            print(self.timetable)
             
             # Floor dictionary generation
             self.floors = {}
             for floor_no, table_list in self.floors_and_tables_config.items(): # need to error check
                 self.floors[str(floor_no)] = Floor( table_list )
             
-    
-    def time_to_moment( self, time ):
-        open_hour, open_min = divmod( self.opening_time, 100 )
-        time_hour, time_min = divmod( time, 100 )
-        print(( time_hour - open_hour ) * 60  +  ( time_min - open_min ))#
-        return ( time_hour - open_hour ) * 60  +  ( time_min - open_min )
-    
-    def moment_to_time( self, moment ):
-        hour_add, min_add = divmod( moment * self.timing_interval_mins )
-        print(hour_add, min_add)
     
     def get_pending_transcations(self) -> dict:
         pending = {}
@@ -125,7 +124,7 @@ class Restaurant( object ):
                 cancelled[transaction] = self.transactions[transaction]
         return cancelled
     
-    def add_party( self, time_start:int, meals:dict, booked:bool, time_length:int=120, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="" ) -> None:
+    def add_party( self, time_start:int, time_length:int, meals:dict, booked:bool, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="" ) -> None:
         try:
             assert type(meals) is dict , "meals is not dict"
             for key, value in meals.items():
@@ -210,44 +209,14 @@ class Restaurant( object ):
 
 class Party( Restaurant ):
     
-    def __init__( self, time_start:int, meals:dict, booked:bool, time_length:int=120, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="", status:int=0 ) -> None:
+    def __init__( self, time_start:int=-1, time_length:int=120, meals:dict, booked:bool, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="", completed=False, cancelled=False ) -> None:
         self.meals = meals
         self.name = name
         self.caravan_no = caravan_no
         self.telephone_no = telephone_no
         self.additional_notes = additional_notes
-        self.status = status
-    
-    ## in_progress, completed, cancelled properties
-    @property
-    def in_progress(self):
-        return ( self.status == 0 )
-    @in_progress.setter
-    def in_progress( self, value ):
-        if value:
-            self.status = 0
-        else:
-            raise ValueError
-    
-    @property
-    def completed(self):
-        return ( self.status == 1 )
-    @completed.setter
-    def completed( self, value ):
-        if value:
-            self.status = 1
-        else:
-            raise ValueError
-    
-    @property
-    def cancelled(self):
-        return ( self.status == 2 )
-    @cancelled.setter
-    def cancelled( self, value ):
-        if value:
-            self.status = 2
-        else:
-            raise ValueError
+        self.completed = completed
+        self.cancelled = cancelled
     
     def __repr__( self ):
         pass
@@ -291,7 +260,6 @@ class Table( Floor ):
         self.seats = seats
 
 if __name__ == "__main__":
-    from pprint import pprint
     import sys
     print(sys.version)
     
@@ -303,10 +271,10 @@ if __name__ == "__main__":
     
     # add bookings
     test = Restaurant( main, meals, drinks, takeaways )
-    test.add_party( meals={ "1":3, "2":1}, time_start=1830, booked=True, name="the first 3 guys and a kid" )
-    test.add_party( meals={"1":1}, booked=True, time_start=1845, name="a lonely guy" )
+    test.add_party( meals={ "1":3, "2":1 }, booked=True, name="the first 3 guys and a kid" )
+    test.add_party( meals={"1":1}, booked=True, name="a lonely guy" )
     
-    #pprint(test.timetable)
+    #print(test.in_progress_transactions)
     
     import doctest
     #doctest.testfile("bookings_restam.doctest")
