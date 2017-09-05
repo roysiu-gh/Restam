@@ -1,3 +1,6 @@
+#!/bin/env/python3
+# coding: utf8
+
 from pathlib import Path
 from typing import Dict, Tuple, List, Any, Callable
 import sys
@@ -11,28 +14,56 @@ meals_data_typing = Dict[ str, int ]
 ### Decorators
 
 def check_iden_exists( func:Callable, *args, **kwargs ):
-    def _inner( self, **kwargs ):
+    def _inner( self, *args, **kwargs ):
         try:
-            if type(kwargs["iden"]) is not str:
+            if not ( isinstance(kwargs["iden"], int) ):
                 raise ValueError("iden is not str")
-            if kwargs["iden"] not in self.transactions:
+            if not ( kwargs["iden"] in self.transactions ):
                 raise ValueError("iden does not exist")
-        except ValueError as e:
+            return func( self, **kwargs )
+        except Exception as e: # Catch-all
             print( "Error in {0}: {1}".format( func, e.args ) )
             raise # Re-raise error for handling
-        else:
-            return func( self, **kwargs )
     return _inner
 
 ### Classes
 
-class Restaurant( object ):
+class Transaction( object ):
+    def __init__( self ):
+        self.transactions = {}
+        self.next_transaction_no = 0
+    
+    @property
+    def pending_transcations(self) -> dict:
+        pending = {}
+        for transaction in self.transactions:
+            if self.transactions[transaction].pending:
+                pending[transaction] = self.transactions[transaction]
+        return pending
+    
+    @property
+    def completed_transcations(self) -> dict:
+        completed = {}
+        for transaction in self.transactions:
+            if self.transactions[transaction].complete:
+                completed[transaction] = self.transactions[transaction]
+        return completed
+    
+    @property
+    def cancelled_transcations(self) -> dict:
+        cancelled = {}
+        for transaction in self.transactions:
+            if self.transactions[transaction].cancelled:
+                cancelled[transaction] = self.transactions[transaction]
+        return cancelled
+
+class Restaurant( Transaction ):
     
     def __init__( self, *args ) -> None:
         """Initiate restaurant object with config_files (args)"""
         
         self.timing_interval_mins = 1
-    
+        
         self.restaurant_name = "NAME"
         
         self.opening_time = [00, 00]
@@ -93,8 +124,7 @@ class Restaurant( object ):
             raise # Re-raise error for handling
         
         else:
-            self.transactions = {}
-            self.next_transaction_no = 0
+            super().__init__()
             
             ## Timetable generation
             self.timetable = {}
@@ -128,28 +158,7 @@ class Restaurant( object ):
         to_add = hour_add * 100 + min_add
         return int( self.opening_time + to_add )
     
-    def get_pending_transcations(self) -> dict:
-        pending = {}
-        for transaction in self.transactions:
-            if (self.transactions[transaction].completed == False) and (self.transactions[transaction].cancelled == False):
-                pending[transaction] = self.transactions[transaction]
-        return pending
-    
-    def get_completed_transcations(self) -> dict:
-        completed = {}
-        for transaction in self.transactions:
-            if (self.transactions[transaction].completed == True) and (self.transactions[transaction].cancelled == False):
-                completed[transaction] = self.transactions[transaction]
-        return completed
-    
-    def get_cancelled_transcations(self) -> dict:
-        cancelled = {}
-        for transaction in self.transactions:
-            if (self.transactions[transaction].completed == False) and (self.transactions[transaction].cancelled == True):
-                cancelled[transaction] = self.transactions[transaction]
-        return cancelled
-    
-    def add_party( self, time_start:int, meals:dict, booked:bool, time_length:int=120, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="" ) -> None:
+    def add_party( self, time_start:int, meals:dict, booked:bool, time_length:int=120, name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="" ) -> "Restaurant":
         try:
             assert type(meals) is dict , "meals is not dict"
             for key, value in meals.items():
@@ -165,11 +174,14 @@ class Restaurant( object ):
             print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
             raise # Re-raise error for handling
         else:
-            self.transactions[ str(self.next_transaction_no) ] = Party( time_start=time_start, time_length=time_length, meals=meals, booked=booked, name=name, caravan_no=caravan_no, telephone_no=telephone_no, additional_notes=additional_notes )
-            self.next_transaction_no += 1 # REALLY important
+            self.transactions[ self.next_transaction_no ] = Party( time_start=time_start, time_length=time_length, meals=meals, booked=booked, name=name, caravan_no=caravan_no, telephone_no=telephone_no, additional_notes=additional_notes )
+            self._add_party_to_timetable( self.next_transaction_no )
+            self.next_transaction_no += 1
     
     def _add_party_to_timetable( self, iden:str ) -> bool:
-        pass
+        moment = self.time_to_moment( self.transactions[iden].time )
+        frame = self.timetable[moment]
+        print(frame)
     
     @check_iden_exists
     def modify_meals( self, iden:str, meals_add:Dict[ str, int ] ) -> None:
@@ -184,15 +196,15 @@ class Restaurant( object ):
             raise # Re-raise error for handling
     
     @check_iden_exists
-    def overwrite_additional_party_notes( self, iden:int, notes:str ) -> None:
+    def overwrite_additional_party_notes( self, iden:int, notes:str, mode:str="w" ) -> None:
         try:
-            assert iden in self.transactions , "id not found"
-            assert type(iden) is int , "id is not int"
-        except AssertionError as e:
+            if not ( mode in ( "w", "a" ) ):
+                raise ValueError( "invalid mode: '{}'".format(mode) )
+        except ( TypeError, KeyError, ValueError ) as e:
             print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
             raise # Re-raise error for handling
         else:
-            pass # do something
+            self.transactions[iden].overwrite_additional_party_notes( notes=notes, mode=mode )
     
     @check_iden_exists
     def modify_past_meals( self, iden:str, meals_add:meals_data_typing ) -> None: # Modify meals on a completed transaction
@@ -201,34 +213,20 @@ class Restaurant( object ):
     ## Status manipulation
     @check_iden_exists
     def get_party( self, iden:int ) -> dict:
-        try:
-            assert iden in self.transactions , "id not found"
-        except AssertionError as e:
-            print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
-            raise # Re-raise error for handling
-        else:
-            return self.transactions[iden]
-    
-    @check_iden_exists
-    def complete_party( self, iden:int ) -> None:
-        try:
-            assert iden in self.transactions , "id not found"
-        except AssertionError as e:
-            print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
-            raise # Re-raise error for handling
-        else:
-            self.transactions[iden].complete = True
-    
-    @check_iden_exists
-    def cancel_party( self, iden ):
-        pass
-    
-    @check_iden_exists
-    def reactivate_party( self, iden ):
-        pass
+        return self.transactions[iden]
     
     def search_parties( self, category, search_term ):
         pass
+    
+    @check_iden_exists
+    def complete_party( self, iden:int ) -> None:
+        self.transactions[iden].complete = True
+    @check_iden_exists
+    def cancel_party( self, iden ):
+        self.transactions[iden].cancelled = True
+    @check_iden_exists
+    def reactivate_party( self, iden ):
+        self.transactions[iden].pending = True
     
     def hcf( self ):
         pass
@@ -246,10 +244,10 @@ class Party( Restaurant ):
     
     ## Status properties
     @property
-    def in_progress(self):
+    def pending(self):
         return ( self.status == 0 )
-    @in_progress.setter
-    def in_progress( self, value ):
+    @pending.setter
+    def pending( self, value ):
         if value:
             self.status = 0
             self.status_log.append(0)
@@ -278,12 +276,6 @@ class Party( Restaurant ):
         else:
             raise ValueError
     
-    def __repr__( self ):
-        pass
-    
-    def __eq__( self, other ):
-        pass
-    
     def modify_meals( self, meals_add:meals_data_typing ) -> None:
         """ modify amount of meals in a party/booking order
         iden -- the party that the prices should be added to
@@ -292,8 +284,9 @@ class Party( Restaurant ):
         for meal, amount in meals_add.items():
             self.meals[meal] = self.meals.get( meal, 0 ) + amount
     
-    def overwrite_additional_party_notes( self, notes:str ) -> None:
-        self.additional_notes = notes
+    def overwrite_additional_party_notes( self, notes:str, mode:str="w" ) -> None:
+        if mode == "w": self.additional_notes = notes
+        elif mode == "a": self.additional_notes += notes
 
 class Floor( Restaurant ):
     
@@ -310,7 +303,7 @@ class Table( Floor ):
 if __name__ == "__main__":
     from pprint import pprint
     import sys
-    print(sys.version)
+    print( ".".join( [str(info) for info in sys.version_info]) )
     
     # instantiate
     main = Path('../haggerston_main.cfg')
@@ -323,7 +316,5 @@ if __name__ == "__main__":
     test.add_party( meals={ "1":3, "2":1}, time_start=1830, booked=True, name="the first 3 guys and a kid" )
     test.add_party( meals={"1":1}, booked=True, time_start=1845, name="a lonely guy" )
     
-    #pprint(test.timetable)
-    
     import doctest
-    doctest.testfile("bookings_restam.doctest")
+    #doctest.testfile("bookings_restam.doctest")
