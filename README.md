@@ -1,6 +1,6 @@
 # Restam
 
-### Synopsis 0.0.10
+### Synopsis 0.11
 Restaurant table manager
 
 ---
