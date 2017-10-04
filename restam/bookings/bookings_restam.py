@@ -9,24 +9,37 @@ __credits = []
 
 from pathlib import Path
 from typing import Dict, Tuple, List, Any, Callable
+from copy import copy, deepcopy
+from collections import OrderedDict
 import sys
 
 ## Create type signatures
-meal_config_typing = Dict[ str, Any ]
-meals_config_typing = Dict[ str, meal_config_typing ]
+#meal_config_typing = Dict[ str, Any ]
+#meals_config_typing = Dict[ str, meal_config_typing ]
 
 meals_data_typing = Dict[ str, int ]
+
+### Exeption classes
+
+class IdentityError(Exception):
+    """Raise when check_iden_exists() is passed a bad id"""
+    def __init( self, message, func:Callable=None ):
+        self.message = message
+        self.func = func
 
 ### Decorators
 
 def check_iden_exists( func:Callable, *args, **kwargs ):
+    """Check that variable 'iden' exists within self.transactions"""
     def _inner( self, *args, **kwargs ):
         try:
+            if not ( "iden" in kwargs ):
+                raise IdentityError( "identity not keyword arg in form 'iden=...'", func )
             if not ( isinstance(kwargs["iden"], int) ):
-                raise ValueError("iden is not str")
+                raise IdentityError( "iden is not str", func )
             if not ( kwargs["iden"] in self.transactions ):
-                raise ValueError("iden does not exist")
-        except ValueError as e:  # Catch-all
+                raise IdentityError( "iden does not exist", func )
+        except IdentityError as e:  # Catch-all
             print( "Error in {0}: {1}".format( func, e.args ) )
             raise  # Re-raise error for handling
         else:
@@ -36,35 +49,108 @@ def check_iden_exists( func:Callable, *args, **kwargs ):
 ### Classes
 
 class Transaction( object ):
+    """Handle transaction operations"""
     def __init__( self ):
-        self.transactions = {}
-        self.next_transaction_no = 0
+        self._transactions = OrderedDict()
+        self.__next_transaction_no = 0
+    
+    def __str__(self):
+        pass
+    
+    def __repr__(self):
+        pass
+    
+    def __iter__(self):
+        for val in self._transactions:
+            yield val
+    
+    @property
+    def transactions(self):
+        return self._transactions
     
     @property
     def pending_transcations(self) -> dict:
         pending = {}
-        for transaction in self.transactions:
-            if self.transactions[transaction].pending:
-                pending[transaction] = self.transactions[transaction]
+        for transaction in self._transactions:
+            if self._transactions[transaction].pending:
+                pending[transaction] = self._transactions[transaction]
         return pending
     
     @property
     def completed_transcations(self) -> dict:
         completed = {}
-        for transaction in self.transactions:
-            if self.transactions[transaction].complete:
-                completed[transaction] = self.transactions[transaction]
+        for transaction in self._transactions:
+            if self._transactions[transaction].complete:
+                completed[transaction] = self._transactions[transaction]
         return completed
     
     @property
     def cancelled_transcations(self) -> dict:
         cancelled = {}
-        for transaction in self.transactions:
-            if self.transactions[transaction].cancelled:
-                cancelled[transaction] = self.transactions[transaction]
+        for transaction in self._transactions:
+            if self._transactions[transaction].cancelled:
+                cancelled[transaction] = self._transactions[transaction]
         return cancelled
+    
+    def add( self, party ):
+        self._transactions[ self.__next_transaction_no ] = party
+        self.__next_transaction_no += 1
+    
+    #@check_iden_exists
+    def get( self, iden ):
+        return self._transactions[ iden ]
 
-class Restaurant( Transaction ):
+class Timetable( object ):
+    """Handle timetable operations"""
+    def __init__( self, opening_time:int, closing_time:int, timing_interval_mins:int, floors_and_tables_config:dict ):
+        self.opening_time = opening_time
+        self.closing_time = closing_time
+        self.timing_interval_mins = timing_interval_mins
+        self.floors_and_tables_config = floors_and_tables_config
+        
+        self._timetable = OrderedDict()
+        
+        self._floors = OrderedDict()
+        for floor_no, table_list in self.floors_and_tables_config.items():
+            self._floors[floor_no] = Floor( table_list )
+        
+        open_hour, open_min = divmod( self.opening_time, 100 )
+        close_hour, close_min = divmod( self.closing_time, 100 )
+        total_open_time_mins = ( close_hour - open_hour ) * 60  +  ( close_min - open_min )
+        for momentxinterval in range( 0, total_open_time_mins, self.timing_interval_mins ):
+            self._timetable[ int(momentxinterval/self.timing_interval_mins) ] = deepcopy(self._floors)
+    
+    def __str__(self):
+        ## Retrieve all floors
+        counter = 1  # Set to 1 to compensate for zero-indexing
+        to_return = bytearray("", "utf-8")  # Use bytearray
+        for key, item in self._floors.items():
+            to_add = "{}: [{}]".format(str(key), str(item))
+            to_return += bytearray(to_add, "utf-8")  # Append Floor
+            if not ( counter == len(self._floors) ):  # Only append comma and space if not end #not efficient
+                to_return += bytearray(", ", "utf-8")
+            counter += 1
+        to_return = to_return.decode(encoding='UTF-8')
+        all_floors = "{{{0}}}".format(to_return)
+        #return "{{{0}}}".format(to_return)  # Double curly brackets to escape
+        
+        ## Put all floors into each time in timetable
+        counter = 1  # Set to 1 to compensate for zero-indexing
+        to_return = bytearray("", "utf-8")  # Use bytearray
+        for key, item in self._timetable.items():
+            to_add = "{}: [{}]".format(str(key), all_floors)
+            to_return += bytearray(to_add, "utf-8")  # Append Floors
+            if not ( counter == len(self._timetable) ):  # Only append comma and space if not end #not efficient
+                to_return += bytearray(", ", "utf-8")
+            counter += 1
+        to_return = to_return.decode(encoding='UTF-8')
+        timetable_print = "{{{0}}}".format(to_return)
+        return timetable_print
+    
+    def __repr__(self):
+        pass
+
+class Restaurant( object ):
     
     def __init__( self, *args ) -> None:
         """Initiate restaurant object with config_files (args)"""
@@ -100,31 +186,27 @@ class Restaurant( Transaction ):
                     raise TypeError("'{}' not integer".format(times))
             
             if not (type(self.floors_and_tables_config) is dict):
-                raise TypeError("self.floors_and_tables is not dict")
+                if not (type(self.floors_and_tables_config) is OrderedDict):
+                    raise TypeError("self.floors_and_tables is not dict")
             for floor_key in self.floors_and_tables_config.keys():  # Check valid floor and table config format
                 if not (type( self.floors_and_tables_config[floor_key] ) is list):
                     raise TypeError("floor index {0} is not a list".format( floor_key ))
                 for table_key, table in enumerate( self.floors_and_tables_config[floor_key] ):
-                    """kt = frozenset((floor_key, table_key))
-                    for to_check, type_, error_message in map(
-                            [type(table), len(table), type(table[0]), type(table[1])],
-                            [list, 2, int, int],
-                            ["table index '{1}', floor index '{0}': is not a list".format(*kt),
-                            "table index '{1}', floor index '{0}': list length not 2".format(*kt),
-                            "table index '{1}', floor index '{0}': table number (index 0) not int".format(*kt),
-                            "table index '{1}', floor index '{0}': seat count (index 0) not int".format(*kt)]
-                            ):
-                        print(to_check, type_, error_message)
+                    kt = frozenset((floor_key, table_key))
+                    for to_check, type_, error_message in zip(
+                            [type(table), len(table), type(table[0]), type(table[1]),],
+                            [list, 2, int, int,],
+                            ["floor index '{1}', table index '{0}': is not a list".format(*kt),
+                            "floor index '{1}', table index '{0}': list length not 2".format(*kt),
+                            "floor index '{1}', table index '{0}': table number (index 0) not int".format(*kt),
+                            "floor index '{1}', table index '{0}': seat count (index 0) not int".format(*kt),
+                            ] ):
                         if not (to_check is type_):
-                            raise TypeError(error_message)"""
-                    assert type(table) is list , "table index '{1}', floor index '{0}': is not a list".format( floor_key, table_key )
-                    assert len(table) is 2 , "table index '{1}', floor index '{0}': list length not 2".format( floor_key, table_key )
-                    
-                    assert type( table[0] ) is int , "table index '{1}', floor index '{0}': table number (index 0) not int".format( floor_key, table_key )
-                    assert type( table[1] ) is int , "table index '{1}', floor index '{0}': seat count (index 0) not int".format( floor_key, table_key )
+                            raise TypeError(error_message)
             
             if not (type(self.common_table_joins_config) is dict):
-                raise TypeError("self.common_table_joins is not dict")
+                if not (type(self.common_table_joins_config) is OrderedDict):
+                    raise TypeError("self.common_table_joins is not dict")
                 
             ## Meals
             if not (type(self.meals) is dict):
@@ -156,26 +238,21 @@ class Restaurant( Transaction ):
             raise  # Re-raise error for handling
         
         else:
-            super().__init__()
-            
-            ## Timetable generation
-            self.timetable = {}
-            open_hour, open_min = divmod( self.opening_time, 100 )
-            close_hour, close_min = divmod( self.closing_time, 100 )
-            total_open_time_mins = ( close_hour - open_hour ) * 60  +  ( close_min - open_min )
-            for momentx5 in range( 0, total_open_time_mins, self.timing_interval_mins ):
-                self.timetable[ int(momentx5/5) ] = None
-            
-            ## Floor dictionary generation
-            self.floors = {}
-            for floor_no, table_list in self.floors_and_tables_config.items():  # need to error check
-                self.floors[str(floor_no)] = Floor( table_list )
+            self.transactions = Transaction()
+            self.timetable = Timetable( opening_time=self.opening_time, closing_time=self.closing_time, timing_interval_mins=self.timing_interval_mins, 
+            floors_and_tables_config=self.floors_and_tables_config)
+    
+    def __str__(self):
+        pass
+    
+    def __repr__(self):
+        pass
     
     def time_to_moment( self, time ):
         try:
-            if ( time < self.opening_time ) or ( time > self.closing_time ):
+            if not ( ( time >= self.opening_time ) and ( time <= self.closing_time ) ):
                 raise ValueError( "time ({2}) not between opening times: {0} and {1}".format( self.opening_time, self.closing_time, time ) )
-            if ( ( time - self.opening_time ) % self.timing_interval_mins ) != 0:
+            if not ( ( time - self.opening_time ) % self.timing_interval_mins == 0 ):
                 raise ValueError( "time ({2}) is not at an interval of {0} mins from opening time ({1})".format( self.timing_interval_mins, self.opening_time, time ) )
         except ValueError as e:
             print( "Error in {0}: {1}".format( sys._getframe().f_code.co_name, e.args ) )
@@ -216,16 +293,16 @@ class Restaurant( Transaction ):
             print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
             raise  # Re-raise error for handling
         else:
-            self.transactions[ self.next_transaction_no ] = Party( time_start=time_start, time_length=time_length,
+            party_add = Party( time_start=time_start, time_length=time_length,
                     meals=meals, booked=booked, name=name,
                     caravan_no=caravan_no, telephone_no=telephone_no, additional_notes=additional_notes )
-            self.__add_party_to_timetable( self.next_transaction_no )
-            self.next_transaction_no += 1
+            self.transactions.add( party_add )
     
-    def __add_party_to_timetable( self, iden:str ) -> bool:
-        start_moment = self.time_to_moment( self.transactions[iden].time_start )
-        start_timeframe = self.timetable[start_moment]
-        #self.timetable[start_moment] = self.transactions[iden] #testing
+    def __add_party_to_timetable( self, iden:str ) -> bool: # move to own class
+        pass
+        #start_moment = self.time_to_moment( self.transactions.get(iden).time_start )
+        #start_timeframe = self.timetable[start_moment]
+        #self.timetable.get(start_moment) = self.transactions[iden] #testing
     
     @check_iden_exists
     def modify_meals( self, iden:str, meals_add:Dict[ str, int ] ) -> None:
@@ -234,7 +311,7 @@ class Restaurant( Transaction ):
         meals_add -- dictionary where key is the meal (normally a number), and the value is the amount to be added (to remove, use negative value)
         """
         try:
-            self.transactions[iden].modify_meals(meals_add)
+            self.transactions.get(iden).modify_meals(meals_add)
         except TypeError as e:
             print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
             raise  # Re-raise error for handling
@@ -248,7 +325,7 @@ class Restaurant( Transaction ):
             print( "Error in {}".format(sys._getframe().f_code.co_name), e.args )
             raise  # Re-raise error for handling
         else:
-            self.transactions[iden].overwrite_additional_party_notes( notes=notes, mode=mode )
+            self.transactions.get(iden).overwrite_additional_party_notes( notes=notes, mode=mode )
     
     @check_iden_exists
     def modify_past_meals( self, iden:str, meals_add:meals_data_typing ) -> None:
@@ -258,25 +335,25 @@ class Restaurant( Transaction ):
     ## Status manipulation
     @check_iden_exists
     def get_party( self, iden:int ) -> dict:
-        return self.transactions[iden]
+        return self.transactions.get(iden)
     
     def search_parties( self, category, search_term ):
         pass
     
     @check_iden_exists
     def complete_party( self, iden:int ) -> None:
-        self.transactions[iden].complete = True
+        self.transactions.get(iden).complete = True
     @check_iden_exists
     def cancel_party( self, iden ):
-        self.transactions[iden].cancelled = True
+        self.transactions.get(iden).cancelled = True
     @check_iden_exists
     def reactivate_party( self, iden ):
-        self.transactions[iden].pending = True
+        self.transactions.get(iden).pending = True
     
-    def hcf( self ):
+    def hcf( self ): # Halt and Catch Fire
         pass
 
-class Party( Restaurant ):
+class Party( object ):
     
     def __init__( self, time_start:int, time_length:int, meals:dict, booked:bool,
             name:str="anon", caravan_no:int=-1, telephone_no:int=-1, additional_notes:str="", status:int=0 ) -> None:
@@ -289,6 +366,12 @@ class Party( Restaurant ):
         self.additional_notes = additional_notes
         self.status = status
         self.status_log = [status]
+    
+    def __str__(self):
+        pass
+    
+    def __repr__(self):
+        pass
     
     ## Status properties
     
@@ -341,41 +424,55 @@ class Party( Restaurant ):
         if mode == "w": self.additional_notes = notes
         elif mode == "a": self.additional_notes += notes
 
-class Floor( Restaurant ):
+class Floor( object ):
     
     def __init__( self, tables ) -> None:
-        self.tables = {}
+        self.tables = OrderedDict()
         for table in tables:
-            self.tables[ str(table[0]) ] = Table( table[1] )
+            self.tables[ table[0] ] = Table( table[1] )
+    
+    def __str__(self):
+        counter = 1  # Set to 1 to compensate for zero-indexing
+        to_return = bytearray("", "utf-8") # use bytearray
+        for key, item in self.tables.items():
+            to_add = "[{}, {}]".format(str(key), str(item))
+            to_return += bytearray(to_add, "utf-8")  # Append Table
+            if not ( counter == len(self.tables) ):  # Only append comma and space if not end #not efficient
+                to_return += bytearray(", ", "utf-8")
+            counter += 1
+        to_return = to_return.decode(encoding='UTF-8')
+        return to_return
+    
+    def __repr__(self):
+        pass
 
-class Table( Floor ):
+class Table( object ):
     
     def __init__( self, seats:int ) -> None:
         self.seats = seats
+    
+    def __str__(self):
+        return str(self.seats)
+    
+    def __repr__(self):
+        pass
 
 if __name__ == "__main__":
     from pprint import pprint
-    import sys
-    print( ".".join( [str(info) for info in sys.version_info]) )
     
-    # instantiate
+    # Instantiate
     main = Path('../haggerston_main.cfg')
     meals = Path('../haggerston_meals.cfg')
     drinks = Path('../haggerston_drinks.cfg')
     takeaways = Path('../haggerston_takeaways.cfg')
     
-    # add bookings
+    # Add bookings
     test = Restaurant( main, meals, drinks, takeaways )
     
-    # add to doctest
-    #print(test.timetable)
-    #print(test.time_to_moment(1630))
-    #print(test.time_to_moment(2255))
-    #print(test.time_to_moment(2300))
+    test.add_party( meals={ "1":3, "2":1 }, time_start=1830, booked=True, name="the first 3 guys and a kid" )
+    test.add_party( meals={ "1":1 }, booked=True, time_start=1845, name="a lonely guy" )
     
-    test.add_party( meals={ "1":3, "2":1}, time_start=1830, booked=True, name="the first 3 guys and a kid" )
-    test.add_party( meals={"1":1}, booked=True, time_start=1845, name="a lonely guy" )
+    #print( test.timetable )
     
     import doctest
-    
-    #doctest.testfile("bookings_restam.doctest")
+    doctest.testfile("bookings_restam.doctest")
