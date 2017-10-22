@@ -20,6 +20,6 @@ Restaurant table manager
 
 ---
 ### License
-[MIT Licence](https://choosealicense.com/licenses/mit/#)
+[GNU GPLv3 Licence](https://choosealicense.com/licenses/gpl-3.0/#)
 
 ---
